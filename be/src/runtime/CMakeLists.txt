@@ -45,6 +45,7 @@ set(RUNTIME_FILES
     mem_tracker.cpp
     data_stream_recvr.cpp
     export_sink.cpp
+    iceberg_table_sink.cpp
     load_channel_mgr.cpp
     load_channel.cpp
     local_tablets_channel.cpp

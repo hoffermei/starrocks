@@ -1760,6 +1760,12 @@ public class Config extends ConfigBase {
     public static int heartbeat_retry_times = 3;
 
     /**
+     * The broker if not set
+     */
+    @ConfField(mutable = true)
+    public static String default_broker_name = "broker";
+
+    /**
      * Temporary use, it will be removed later.
      * Set true if using StarOS to manage tablets for StarRocks lake table.
      */
@@ -2004,4 +2010,8 @@ public class Config extends ConfigBase {
      **/
     @ConfField(mutable = true)
     public static boolean enable_auto_tablet_distribution = false;
+    @ConfField(mutable = true)
+    public static long iceberg_commit_max_retries = 3;
+    @ConfField(mutable = true)
+    public static long iceberg_default_add_files_rpc_timeout_ms = 120000 * 3 / 4;
 }

@@ -82,6 +82,7 @@ import com.starrocks.mysql.MysqlSerializer;
 import com.starrocks.mysql.privilege.PrivPredicate;
 import com.starrocks.persist.CreateInsertOverwriteJobLog;
 import com.starrocks.persist.gson.GsonUtils;
+import com.starrocks.planner.IcebergTableSink;
 import com.starrocks.planner.OlapScanNode;
 import com.starrocks.planner.OlapTableSink;
 import com.starrocks.planner.PlanFragment;
@@ -1331,6 +1332,13 @@ public class StmtExecutor {
                 context.getSessionVariable().setPreferComputeNode(false);
                 context.getSessionVariable().setUseComputeNodes(0);
                 OlapTableSink dataSink = (OlapTableSink) execPlan.getFragments().get(0).getSink();
+                dataSink.init(context.getExecutionId(), transactionId, database.getId(),
+                        ConnectContext.get().getSessionVariable().getQueryTimeoutS());
+                dataSink.complete();
+            } else if (execPlan.getFragments().get(0).getSink() instanceof IcebergTableSink) {
+                context.getSessionVariable().setPreferComputeNode(false);
+                context.getSessionVariable().setUseComputeNodes(0);
+                IcebergTableSink dataSink = (IcebergTableSink) execPlan.getFragments().get(0).getSink();
                 dataSink.init(context.getExecutionId(), transactionId, database.getId(),
                         ConnectContext.get().getSessionVariable().getQueryTimeoutS());
                 dataSink.complete();

@@ -350,6 +350,17 @@ struct TIcebergTable {
 
     // Schema columns, except partition columns
     2: optional list<TColumn> columns
+
+    // partition columns
+    3: optional list<TIcebergTablePartitionColumn> partitionColumns
+    // column name ==> TExtraColumnAttribute
+    4: optional map<string, Types.TExtraColumnAttribute> columnAttributes
+}
+
+struct TIcebergTablePartitionColumn {
+  1: required string columnName;
+  2: required string partitionName;
+  3: required string transform;
 }
 
 struct THudiTable {

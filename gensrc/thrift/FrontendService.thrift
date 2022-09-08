@@ -1080,7 +1080,7 @@ struct TGetTablesInfoResponse {
 }
 
 struct TUpdateResourceUsageRequest {
-    1: optional i64 backend_id 
+    1: optional i64 backend_id
     2: optional ResourceUsage.TResourceUsage resource_usage
 }
 
@@ -1110,6 +1110,18 @@ struct TTableInfo {
     19: optional i64 checksum
     20: optional string create_options
     21: optional string table_comment
+}
+
+struct TAddIcebergFilesRequest {
+    1: required i64 db_id
+    2: required i64 table_id
+    3: required list<string> files
+    4: optional TAuthenticateParams auth_info
+    5: optional i64 iceberg_add_files_rpc_timeout_ms
+}
+
+struct TAddIcebergFilesResponse {
+    1: required Status.TStatus status
 }
 
 service FrontendService {
@@ -1169,8 +1181,10 @@ service FrontendService {
     TCreatePartitionResult createPartition(1: TCreatePartitionRequest request)
 
     TUpdateResourceUsageResponse updateResourceUsage(1: TUpdateResourceUsageRequest request)
-    
+
     // For Materialized View
     MVMaintenance.TMVReportEpochResponse mvReport(1: MVMaintenance.TMVMaintenanceTasks request)
+
+    TAddIcebergFilesResponse addIcebergFiles(1: TAddIcebergFilesRequest request)
 }
 

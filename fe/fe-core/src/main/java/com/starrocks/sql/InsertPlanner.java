@@ -16,19 +16,24 @@ package com.starrocks.sql;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.starrocks.alter.SchemaChangeHandler;
+import com.starrocks.analysis.BrokerDesc;
 import com.starrocks.analysis.DescriptorTable;
 import com.starrocks.analysis.Expr;
 import com.starrocks.analysis.SlotDescriptor;
 import com.starrocks.analysis.StringLiteral;
 import com.starrocks.analysis.TupleDescriptor;
 import com.starrocks.catalog.Column;
+import com.starrocks.catalog.IcebergTable;
 import com.starrocks.catalog.KeysType;
 import com.starrocks.catalog.MysqlTable;
 import com.starrocks.catalog.OlapTable;
+import com.starrocks.common.Config;
 import com.starrocks.common.Pair;
 import com.starrocks.planner.DataSink;
+import com.starrocks.planner.IcebergTableSink;
 import com.starrocks.planner.MysqlTableSink;
 import com.starrocks.planner.OlapTableSink;
 import com.starrocks.planner.PlanFragment;
@@ -76,6 +81,8 @@ import com.starrocks.sql.plan.PlanFragmentBuilder;
 import com.starrocks.thrift.TResultSinkType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import com.starrocks.thrift.TWriteQuorumType;
+import org.apache.hadoop.conf.Configuration;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -187,6 +194,9 @@ public class InsertPlanner {
                         olapTable.enableReplicatedStorage());
             } else if (insertStmt.getTargetTable() instanceof MysqlTable) {
                 dataSink = new MysqlTableSink((MysqlTable) insertStmt.getTargetTable());
+            } else if (insertStmt.getTargetTable() instanceof IcebergTable) {
+                BrokerDesc brokerDesc = getBrokerDesc();
+                dataSink = new IcebergTableSink((IcebergTable) insertStmt.getTargetTable(), olapTuple, brokerDesc);
             } else {
                 throw new SemanticException("Unknown table type " + insertStmt.getTargetTable().getType());
             }
@@ -220,6 +230,18 @@ public class InsertPlanner {
                 session.getSessionVariable().setEnablePipelineEngine(true);
             }
         }
+    }
+
+    public BrokerDesc getBrokerDesc() {
+        Configuration conf = new Configuration();
+        String brokerName = Config.default_broker_name;
+        Preconditions.checkState(brokerName != null && !brokerName.isEmpty());
+        Map<String, String> brokerProperties = Maps.newHashMap();
+        brokerProperties.put("fs.s3a.access.key", conf.get("fs.s3a.access.key"));
+        brokerProperties.put("fs.s3a.secret.key", conf.get("fs.s3a.secret.key"));
+        brokerProperties.put("fs.s3a.endpoint", conf.get("fs.s3a.endpoint"));
+        brokerProperties.put("fs.s3a.etag.checksum", "false");
+        return new BrokerDesc(brokerName, brokerProperties);
     }
 
     private void castLiteralToTargetColumnsType(InsertStmt insertStatement) {

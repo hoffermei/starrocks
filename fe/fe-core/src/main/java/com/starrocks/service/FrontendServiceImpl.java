@@ -50,6 +50,8 @@ import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Database;
 import com.starrocks.catalog.ExpressionRangePartitionInfo;
 import com.starrocks.catalog.FunctionSet;
+import com.starrocks.catalog.IcebergTable;
+import com.starrocks.catalog.IcebergTable;
 import com.starrocks.catalog.InternalCatalog;
 import com.starrocks.catalog.LocalTablet;
 import com.starrocks.catalog.MaterializedIndex;
@@ -75,10 +77,12 @@ import com.starrocks.common.DuplicatedRequestException;
 import com.starrocks.common.LabelAlreadyUsedException;
 import com.starrocks.common.MetaNotFoundException;
 import com.starrocks.common.PatternMatcher;
+import com.starrocks.common.Status;
 import com.starrocks.common.ThriftServerContext;
 import com.starrocks.common.ThriftServerEventProcessor;
 import com.starrocks.common.UserException;
 import com.starrocks.common.util.DebugUtil;
+import com.starrocks.external.iceberg.IcebergFilesMgr;
 import com.starrocks.http.BaseAction;
 import com.starrocks.http.UnauthorizedException;
 import com.starrocks.leader.LeaderImpl;
@@ -120,6 +124,8 @@ import com.starrocks.thrift.FrontendServiceVersion;
 import com.starrocks.thrift.MVTaskType;
 import com.starrocks.thrift.TAbortRemoteTxnRequest;
 import com.starrocks.thrift.TAbortRemoteTxnResponse;
+import com.starrocks.thrift.TAddIcebergFilesRequest;
+import com.starrocks.thrift.TAddIcebergFilesResponse;
 import com.starrocks.thrift.TAuthenticateParams;
 import com.starrocks.thrift.TBatchReportExecStatusParams;
 import com.starrocks.thrift.TBatchReportExecStatusResult;
@@ -215,9 +221,14 @@ import org.apache.logging.log4j.Logger;
 import org.apache.thrift.TException;
 
 import java.util.Collections;
+import java.io.File;
+import java.nio.file.Paths;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -1782,5 +1793,49 @@ public class FrontendServiceImpl implements FrontendService.Iface {
         }
         MVManager.getInstance().onReportEpoch(request);
         return new TMVReportEpochResponse();
+    }
+
+    @Override
+    public TAddIcebergFilesResponse addIcebergFiles(TAddIcebergFilesRequest request) throws TException {
+        LOG.debug("receive add iceberg files request: table {} files {}", request.table_id, request.files);
+        long start = new Date().getTime();
+        Table table = GlobalStateMgr.getCurrentState().getDb(request.db_id).getTable(request.table_id);
+        if (!(table instanceof IcebergTable)) {
+            LOG.warn("table {} is not iceberg table, only support iceberg table currently", table.getName());
+            TStatus status = new TStatus(TStatusCode.INVALID_ARGUMENT);
+            status.setError_msgs(Lists.newArrayList("only support iceberg table"));
+            return new TAddIcebergFilesResponse();
+        }
+
+        IcebergTable icebergTable = (IcebergTable) table;
+        org.apache.iceberg.Table iTable = icebergTable.getIcebergTable();
+        String location = iTable.location();
+
+        LOG.debug("begin parse partition key from file path");
+        for (String filename : request.files) {
+            if (!filename.startsWith(location)) {
+                TStatus tStatus = new TStatus(TStatusCode.INVALID_ARGUMENT);
+                tStatus.setError_msgs(Lists.newArrayList(String.format(
+                        "invalid data file path: %s, it should prefix with table location", filename)));
+                return new TAddIcebergFilesResponse(tStatus);
+            }
+            String appendix = filename.replace(location + "/data/", "");
+            String partitionKey = Paths.get(appendix).getParent().getFileName().toString();
+            partitionKey = StringUtils.strip(partitionKey, File.separator);
+            LOG.debug("got partition key {} from filepath {}", partitionKey, filename);
+        }
+
+        IcebergFilesMgr icebergFilesMgr = new IcebergFilesMgr(iTable);
+        Set<String> icebergFiles = new HashSet<>(request.files);
+        long icebergAddFilesRpcTimeoutMs = request.isSetIceberg_add_files_rpc_timeout_ms() ?
+                request.getIceberg_add_files_rpc_timeout_ms() : Config.iceberg_default_add_files_rpc_timeout_ms;
+        Status status = icebergFilesMgr.addIcebergFiles(icebergFiles, start, icebergAddFilesRpcTimeoutMs);
+        if (!status.ok()) {
+            TStatus tStatus = new TStatus(status.getErrorCode());
+            tStatus.setError_msgs(Lists.newArrayList(status.getErrorMsg()));
+            return new TAddIcebergFilesResponse(tStatus);
+        }
+        LOG.debug("success add iceberg data files");
+        return new TAddIcebergFilesResponse(new TStatus(TStatusCode.OK));
     }
 }

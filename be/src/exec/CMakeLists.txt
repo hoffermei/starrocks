@@ -40,6 +40,7 @@ set(EXEC_FILES
     local_file_writer.cpp
     broker_writer.cpp
     plain_text_builder.cpp
+    orc_builder.cpp
     aggregator.cpp
     sorted_streaming_aggregator.cpp
     aggregate/agg_hash_variant.cpp

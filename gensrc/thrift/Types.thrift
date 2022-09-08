@@ -495,3 +495,8 @@ struct TBinlogOffset {
     2: optional TVersion version
     3: optional i64 lsn
 }
+
+struct TExtraColumnAttribute {
+    // attributeName ==> attributeValue
+    1: optional map<string, string> attributes;
+}
