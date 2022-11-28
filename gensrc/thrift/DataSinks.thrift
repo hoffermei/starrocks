@@ -195,26 +195,26 @@ struct TOlapTableSink {
 }
 
 struct TIcebergTableSink {
-    1: required Types.TUniqueId load_id
-    3: required i64 db_id
-    4: required i64 table_id
-    5: required i32 tuple_id
-    6: required string location
-    7: required string file_format
-    8: optional string db_name
-    9: optional string table_name
-    10: optional list<string> sort_fields
-    // properties need to access broker.
-    11: optional list<Types.TNetworkAddress> broker_addresses
-    12: optional map<string, string> properties
-    13: required i64 rows_per_file
-    14: required i64 bytes_per_file
-    15: optional i64 load_channel_timeout_s // the timeout of load channels in second
-    16: required Descriptors.TTableDescriptor tableDescripter
+     1: required Types.TUniqueId load_id
+     3: required i64 db_id
+     4: required i64 table_id
+     5: required i32 tuple_id
+     6: required string location
+     7: required string file_format
+     8: optional string db_name
+     9: optional string table_name
+     10: optional list<string> sort_fields
+     // properties need to access broker.
+     11: optional list<Types.TNetworkAddress> broker_addresses
+     12: optional map<string, string> properties
+     13: required i64 rows_per_file
+     14: required i64 bytes_per_file
+     15: optional i64 load_channel_timeout_s // the timeout of load channels in second
+     16: required Descriptors.TTableDescriptor tableDescripter
 
-    // export file name prefix
-    30: optional string file_name_prefix
-}
+     // export file name prefix
+     30: optional string file_name_prefix
+ }
 
 struct TDataSink {
   1: required TDataSinkType type

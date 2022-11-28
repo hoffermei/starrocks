@@ -45,6 +45,7 @@ import org.apache.hadoop.hive.metastore.api.AggrStats;
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException;
 import org.apache.hadoop.hive.metastore.api.Catalog;
 import org.apache.hadoop.hive.metastore.api.CheckConstraintsRequest;
+import org.apache.hadoop.hive.metastore.api.CheckLockRequest;
 import org.apache.hadoop.hive.metastore.api.CmRecycleRequest;
 import org.apache.hadoop.hive.metastore.api.CmRecycleResponse;
 import org.apache.hadoop.hive.metastore.api.ColumnStatistics;
@@ -129,6 +130,7 @@ import org.apache.hadoop.hive.metastore.api.UniqueConstraintsRequest;
 import org.apache.hadoop.hive.metastore.api.UnknownDBException;
 import org.apache.hadoop.hive.metastore.api.UnknownPartitionException;
 import org.apache.hadoop.hive.metastore.api.UnknownTableException;
+import org.apache.hadoop.hive.metastore.api.UnlockRequest;
 import org.apache.hadoop.hive.metastore.api.WMFullResourcePlan;
 import org.apache.hadoop.hive.metastore.api.WMMapping;
 import org.apache.hadoop.hive.metastore.api.WMNullablePool;
@@ -1218,8 +1220,7 @@ public class HiveMetaStoreThriftClient implements IMetaStoreClient, AutoCloseabl
     @Override
     public void createTable(Table tbl)
             throws AlreadyExistsException, InvalidObjectException, MetaException, NoSuchObjectException, TException {
-        throw new TException("method not implemented");
-
+        client.create_table(tbl);
     }
 
     @Override
@@ -1239,7 +1240,7 @@ public class HiveMetaStoreThriftClient implements IMetaStoreClient, AutoCloseabl
     @Override
     public void alter_table(String catName, String dbName, String tblName, Table newTable,
                             EnvironmentContext envContext) throws InvalidOperationException, MetaException, TException {
-        throw new TException("method not implemented");
+        this.client.alter_table_with_environment_context(dbName, tblName, newTable, envContext);
     }
 
     @Override
@@ -1252,7 +1253,7 @@ public class HiveMetaStoreThriftClient implements IMetaStoreClient, AutoCloseabl
     public void alter_table_with_environmentContext(String databaseName, String tblName, Table table,
                                                     EnvironmentContext environmentContext)
             throws InvalidOperationException, MetaException, TException {
-        throw new TException("method not implemented");
+        this.client.alter_table_with_environment_context(databaseName, tblName, table, environmentContext);
     }
 
     @Override
@@ -1819,19 +1820,18 @@ public class HiveMetaStoreThriftClient implements IMetaStoreClient, AutoCloseabl
 
     @Override
     public LockResponse lock(LockRequest request) throws NoSuchTxnException, TxnAbortedException, TException {
-        throw new TException("method not implemented");
+        return this.client.lock(request);
     }
 
     @Override
     public LockResponse checkLock(long lockid)
             throws NoSuchTxnException, TxnAbortedException, NoSuchLockException, TException {
-        throw new TException("method not implemented");
+        return this.client.check_lock(new CheckLockRequest(lockid));
     }
 
     @Override
     public void unlock(long lockid) throws NoSuchLockException, TxnOpenException, TException {
-        throw new TException("method not implemented");
-
+        this.client.unlock(new UnlockRequest(lockid));
     }
 
     @Override

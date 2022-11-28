@@ -5,10 +5,10 @@ package com.starrocks.planner;
 import com.google.common.collect.Lists;
 import com.starrocks.analysis.BrokerDesc;
 import com.starrocks.analysis.TupleDescriptor;
-import com.starrocks.catalog.Catalog;
 import com.starrocks.catalog.FsBroker;
 import com.starrocks.catalog.IcebergTable;
 import com.starrocks.common.AnalysisException;
+import com.starrocks.common.ErrorReport;
 import com.starrocks.common.UserException;
 import com.starrocks.common.util.PrintableMap;
 import com.starrocks.server.GlobalStateMgr;
@@ -18,12 +18,13 @@ import com.starrocks.thrift.TExplainLevel;
 import com.starrocks.thrift.TIcebergTableSink;
 import com.starrocks.thrift.TNetworkAddress;
 import com.starrocks.thrift.TUniqueId;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.commons.lang.StringEscapeUtils;
 
 import java.util.List;
 import java.util.stream.Collectors;
-
-import static com.starrocks.system.SystemInfoService.DEFAULT_CLUSTER;
+import org.apache.iceberg.SortField;
 
 public class IcebergTableSink extends DataSink {
     private IcebergTable icebergTable;
@@ -31,31 +32,46 @@ public class IcebergTableSink extends DataSink {
     private final String table;
     private TupleDescriptor tupleDescriptor;
     private final String location;
+    private final BrokerDesc brokerDesc;
     private final String fileFormat;
     private final List<String> sortFields;
-    private final BrokerDesc brokerDesc;
     private final Long rowsPerFile;
     private final Long bytesPerFile;
     private String fileNamePrefix;
     // set after init called
     private TDataSink tDataSink;
 
-    public IcebergTableSink(IcebergTable icebergTable, TupleDescriptor tupleDescriptor, BrokerDesc brokerDesc) {
+    public IcebergTableSink(IcebergTable icebergTable, TupleDescriptor tupleDescriptor) {
         this.icebergTable = icebergTable;
         db = icebergTable.getDb();
         table = icebergTable.getTable();
         this.tupleDescriptor = tupleDescriptor;
         org.apache.iceberg.Table table = icebergTable.getIcebergTable();
         location = table.location();
-        sortFields = table.sortOrder().fields().stream().map(f -> f.toString()).collect(Collectors.toList());
+        sortFields = table.sortOrder().fields().stream().map(SortField::toString).collect(Collectors.toList());
         fileFormat = table.properties().getOrDefault("write.format.default", "orc").toLowerCase();
         rowsPerFile = 1000000L;
         bytesPerFile = 134217728L;
         fileNamePrefix = this.table;
-        this.brokerDesc = brokerDesc;
+
+        Map<String, String> properties = new HashMap<>();
+        if (icebergTable.isWritableTbl()) {
+            properties.put("hadoop.security.authentication", icebergTable.getIcebergBrokerAuthType());
+            properties.put("username", icebergTable.getIcebergBrokerAuthUsername());
+            properties.put("password", icebergTable.getIcebergBrokerAuthPassword());
+            this.brokerDesc = new BrokerDesc(icebergTable.getIcebergBrokerName(), properties);
+        } else {
+            this.brokerDesc = new BrokerDesc("", properties);
+        }
+
     }
 
     public void init(TUniqueId loadId, long txnId, long dbId, long loadChannelTimeoutS) throws AnalysisException {
+
+        if (!icebergTable.isWritableTbl()) {
+            ErrorReport.reportAnalysisException("Iceberg Table is not writable, reason:" + icebergTable.getReadonlyReason());
+        }
+
         tDataSink = new TDataSink(TDataSinkType.ICEBERG_TABLE_SINK);
         TIcebergTableSink tIcebergTableSink = new TIcebergTableSink(
                 loadId,
@@ -112,8 +128,7 @@ public class IcebergTableSink extends DataSink {
         sb.append(prefix + "  bytesPerFile=" + bytesPerFile + "\n");
         sb.append(prefix + "  fileNamePrefix=" + fileNamePrefix + "\n");
         sb.append(prefix + "  broker_name=" + brokerDesc.getName() + " property("
-                + new PrintableMap<String, String>(
-                brokerDesc.getProperties(), "=", true, false)
+                + new PrintableMap<>(brokerDesc.getProperties(), "=", true, false)
                 + ")");
         sb.append("\n");
         return sb.toString();

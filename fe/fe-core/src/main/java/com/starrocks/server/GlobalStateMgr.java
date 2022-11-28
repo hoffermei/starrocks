@@ -2540,7 +2540,16 @@ public class GlobalStateMgr {
             if (!Strings.isNullOrEmpty(maxTotalBytes)) {
                 sb.append("\"fileIO.cache.max-total-bytes\" = \"").append(maxTotalBytes).append("\",\n");
             }
-            sb.append("\"resource\" = \"").append(icebergTable.getResourceName()).append("\"");
+            sb.append("\"resource\" = \"").append(icebergTable.getResourceName()).append("\",\n");
+            for (Map.Entry<String, String> entry : icebergTable.getIcebergProperties().entrySet()) {
+                sb.append("\"").append(entry.getKey()).append("\" = \"").append(entry.getValue()).append("\",\n");
+            }
+            sb.append("\"writable\" = \"").append(icebergTable.isWritableTbl()).append("\",\n");
+            if (!icebergTable.isWritableTbl()) {
+                sb.append("\"readonly_reason\" = \"");
+                sb.append(Strings.isNullOrEmpty(icebergTable.getReadonlyReason()) ? "unknown" :
+                        icebergTable.getReadonlyReason()).append("\"");
+            }
             sb.append("\n)");
         } else if (table.getType() == TableType.JDBC) {
             JDBCTable jdbcTable = (JDBCTable) table;

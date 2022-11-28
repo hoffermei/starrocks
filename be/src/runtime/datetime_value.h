@@ -380,6 +380,12 @@ public:
         return std::string(buf, end - buf);
     }
 
+    std::string human_string() const {
+        char buf[64];
+        char* end = to_human_string(buf);
+        return std::string(buf, end - buf);
+    }
+
     static DateTimeValue datetime_min_value() { return _s_min_datetime_value; }
 
     static DateTimeValue datetime_max_value() { return _s_max_datetime_value; }
@@ -444,9 +450,11 @@ private:
     // Used to convert to a string.
     char* append_date_string(char* to) const;
     char* append_time_string(char* to) const;
+    char* append_human_time_string(char* to) const;
     char* to_datetime_string(char* to) const;
     char* to_date_string(char* to) const;
     char* to_time_string(char* to) const;
+    char* to_human_string(char* to) const;
 
     // Used to convert to uint64_t
     int64_t to_datetime_int64() const;

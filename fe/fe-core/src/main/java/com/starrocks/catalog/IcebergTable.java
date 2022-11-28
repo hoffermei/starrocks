@@ -25,6 +25,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.starrocks.analysis.DescriptorTable;
 import com.starrocks.common.DdlException;
+import com.starrocks.common.Pair;
 import com.starrocks.common.io.Text;
 import com.starrocks.connector.HdfsEnvironment;
 import com.starrocks.connector.iceberg.IcebergCatalog;
@@ -35,6 +36,7 @@ import com.starrocks.connector.iceberg.io.IcebergCachingFileIO;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.thrift.TColumn;
 import com.starrocks.thrift.TIcebergTable;
+import com.starrocks.thrift.TIcebergTablePartitionColumn;
 import com.starrocks.thrift.TTableDescriptor;
 import com.starrocks.thrift.TTableType;
 import org.apache.iceberg.BaseTable;
@@ -61,8 +63,15 @@ public class IcebergTable extends Table {
     private static final String JSON_KEY_ICEBERG_TABLE = "table";
     private static final String JSON_KEY_RESOURCE_NAME = "resource";
     private static final String JSON_KEY_ICEBERG_PROPERTIES = "icebergProperties";
+    private static final String JSON_KEY_IS_WRITABLE_TABLE = "isWritableTbl";
+    private static final String JSON_KEY_READONLY_REASON = "readonlyReason";
 
     public static final String ICEBERG_CATALOG_TYPE = "iceberg.catalog.type";
+    public static final String ICEBERG_BROKER_NAME = "iceberg.broker.name";
+    public static final String ICEBERG_BROKER_AUTH_TYPE = "iceberg.broker.hadoop.security.authentication";
+    public static final String SIMPLE_AUTH_TYPE = "simple";
+    public static final String ICEBERG_BROKER_AUTH_USERNAME = "iceberg.broker.hadoop.security.username";
+    public static final String ICEBERG_BROKER_AUTH_PASSWORD = "iceberg.broker.hadoop.security.password";
     @Deprecated
     public static final String ICEBERG_CATALOG_LEGACY = "starrocks.catalog-type";
     public static final String ICEBERG_METASTORE_URIS = "iceberg.catalog.hive.metastore.uris";
@@ -74,7 +83,9 @@ public class IcebergTable extends Table {
     public static final String PARTITION_NULL_VALUE = "null";
 
     private org.apache.iceberg.Table icbTbl; // actual iceberg table
+    private boolean isWritableTbl = false;
     private boolean isCatalogTbl = false;
+    private String readonlyReason =  "";
     private String catalog;
     private String db;
     private String table;
@@ -101,6 +112,8 @@ public class IcebergTable extends Table {
         db = properties.get(ICEBERG_DB);
         table = properties.get(ICEBERG_TABLE);
 
+        validateWritable(properties);
+        LOG.info("Iceberg table:" + db + "." + table + " is writable:" + isWritableTbl);
         String catalogType = properties.get(ICEBERG_CATALOG_TYPE);
         if (catalogType != null && IcebergCatalogType.GLUE_CATALOG == IcebergCatalogType.valueOf(catalogType)) {
             setGlueCatalogProperties();
@@ -139,6 +152,13 @@ public class IcebergTable extends Table {
                 filter(partitionField -> partitionField.transform().isIdentity()).collect(Collectors.toList());
         return identityPartitionFields.stream().map(partitionField -> getColumn(partitionField.name())).collect(
                 Collectors.toList());
+    }
+
+    public List<Pair<Column, String>> getPartitionColumnAndTransform() {
+        List<PartitionField> identityPartitionFields = this.getIcebergTable().spec().fields().stream().
+                filter(partitionField -> partitionField.transform().isIdentity()).collect(Collectors.toList());
+        return identityPartitionFields.stream().map(partitionField -> new Pair<>(getColumn(partitionField.name()),
+                partitionField.transform().toString())).collect(Collectors.toList());
     }
 
     public boolean isUnPartitioned() {
@@ -297,9 +317,55 @@ public class IcebergTable extends Table {
         this.resourceName = resourceName;
 
         validateColumn(icebergCatalog);
-
         if (!copiedProps.isEmpty()) {
             throw new DdlException("Unknown table properties: " + copiedProps.toString());
+        }
+    }
+
+    private void validateWritable(Map<String, String> properties) throws DdlException {
+        // check table write related properties
+        if (properties == null) {
+            throw new DdlException("Please set properties of iceberg table.");
+        }
+
+        isWritableTbl = true;
+
+        String brokerName = properties.get(ICEBERG_BROKER_NAME);
+        if (!Strings.isNullOrEmpty(brokerName)) {
+            icebergProperties.put(ICEBERG_BROKER_NAME, brokerName);
+            properties.remove(ICEBERG_BROKER_NAME);
+        } else {
+            readonlyReason = ICEBERG_BROKER_NAME + " not set";
+            isWritableTbl = false;
+        }
+
+        String authType = properties.get(ICEBERG_BROKER_AUTH_TYPE);
+        if (!Strings.isNullOrEmpty(authType)) {
+            if (SIMPLE_AUTH_TYPE.equals(authType)) {
+                icebergProperties.put(ICEBERG_BROKER_AUTH_TYPE, authType);
+                properties.remove(ICEBERG_BROKER_AUTH_TYPE);
+            } else {
+                throw new DdlException("Unknown auth type " + authType);
+            }
+        } else {
+            readonlyReason = ICEBERG_BROKER_AUTH_TYPE + " not set";
+            isWritableTbl = false;
+        }
+
+        String userName = properties.get(ICEBERG_BROKER_AUTH_USERNAME);
+        if (userName != null) {
+            icebergProperties.put(ICEBERG_BROKER_AUTH_USERNAME, userName);
+            properties.remove(ICEBERG_BROKER_AUTH_USERNAME);
+        } else {
+            icebergProperties.put(ICEBERG_BROKER_AUTH_USERNAME, "");
+        }
+
+        String password = properties.get(ICEBERG_BROKER_AUTH_PASSWORD);
+        if (password != null) {
+            icebergProperties.put(ICEBERG_BROKER_AUTH_PASSWORD, password);
+            properties.remove(ICEBERG_BROKER_AUTH_PASSWORD);
+        } else {
+            icebergProperties.put(ICEBERG_BROKER_AUTH_PASSWORD, "");
         }
     }
 
@@ -398,7 +464,18 @@ public class IcebergTable extends Table {
         for (Column column : getBaseSchema()) {
             tColumns.add(column.toThrift());
         }
-        tIcebergTable.setColumns(tColumns);
+        List<Pair<Column, String>> partitionColumns = getPartitionColumnAndTransform();
+        if (partitionColumns != null && !partitionColumns.isEmpty()) {
+            for (Pair<Column, String> pair : partitionColumns) {
+                Column col = pair.first;
+                String transform = pair.second;
+                TIcebergTablePartitionColumn partitionColumn = new TIcebergTablePartitionColumn();
+                partitionColumn.setColumnName(col.getName());
+                partitionColumn.setPartitionName(col.getName());
+                partitionColumn.setTransform(transform);
+                tIcebergTable.addToPartitionColumns(partitionColumn);
+            }
+        }
 
         TTableDescriptor tTableDescriptor = new TTableDescriptor(id, TTableType.ICEBERG_TABLE,
                 fullSchema.size(), 0, table, db);
@@ -416,6 +493,8 @@ public class IcebergTable extends Table {
         if (!Strings.isNullOrEmpty(resourceName)) {
             jsonObject.addProperty(JSON_KEY_RESOURCE_NAME, resourceName);
         }
+        jsonObject.addProperty(JSON_KEY_IS_WRITABLE_TABLE, isWritableTbl);
+        jsonObject.addProperty(JSON_KEY_READONLY_REASON, readonlyReason);
         if (!icebergProperties.isEmpty()) {
             JsonObject jIcebergProperties = new JsonObject();
             for (Map.Entry<String, String> entry : icebergProperties.entrySet()) {
@@ -435,6 +514,17 @@ public class IcebergTable extends Table {
         db = jsonObject.getAsJsonPrimitive(JSON_KEY_ICEBERG_DB).getAsString();
         table = jsonObject.getAsJsonPrimitive(JSON_KEY_ICEBERG_TABLE).getAsString();
         resourceName = jsonObject.getAsJsonPrimitive(JSON_KEY_RESOURCE_NAME).getAsString();
+
+        if (jsonObject.has(JSON_KEY_IS_WRITABLE_TABLE)) {
+            isWritableTbl = jsonObject.getAsJsonPrimitive(JSON_KEY_IS_WRITABLE_TABLE).getAsBoolean();
+        } else {
+            readonlyReason = "Old-style iceberg table";
+        }
+
+        if (jsonObject.has(JSON_KEY_READONLY_REASON)) {
+            readonlyReason = jsonObject.getAsJsonPrimitive(JSON_KEY_READONLY_REASON).getAsString();
+        }
+
         if (jsonObject.has(JSON_KEY_ICEBERG_PROPERTIES)) {
             JsonObject jIcebergProperties = jsonObject.getAsJsonObject(JSON_KEY_ICEBERG_PROPERTIES);
             for (Map.Entry<String, JsonElement> entry : jIcebergProperties.entrySet()) {
@@ -451,5 +541,29 @@ public class IcebergTable extends Table {
     @Override
     public boolean isSupported() {
         return true;
+    }
+
+    public boolean isWritableTbl() {
+        return isWritableTbl;
+    }
+
+    public String getIcebergBrokerName() {
+        return icebergProperties.get(ICEBERG_BROKER_NAME);
+    }
+
+    public String getIcebergBrokerAuthType() {
+        return icebergProperties.get(ICEBERG_BROKER_AUTH_TYPE);
+    }
+
+    public String getIcebergBrokerAuthUsername() {
+        return icebergProperties.get(ICEBERG_BROKER_AUTH_USERNAME);
+    }
+
+    public String getIcebergBrokerAuthPassword() {
+        return icebergProperties.get(ICEBERG_BROKER_AUTH_PASSWORD);
+    }
+
+    public String getReadonlyReason() {
+        return readonlyReason;
     }
 }

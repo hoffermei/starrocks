@@ -6,12 +6,13 @@
 #include <utility>
 
 #include "cctz/time_zone.h"
+#include "column/chunk.h"
 #include "column/const_column.h"
 #include "column/datum_tuple.h"
 #include "column/type_traits.h"
 #include "column/vectorized_fwd.h"
+#include "exprs/column_ref.h"
 #include "exprs/expr.h"
-#include "exprs/vectorized/column_ref.h"
 #include "formats/csv/converter.h"
 #include "gen_cpp/Descriptors_types.h"
 #include "orc/Int128.hh"
@@ -23,7 +24,7 @@
 #include "runtime/buffer_control_block.h"
 #include "runtime/decimalv2_value.h"
 #include "runtime/decimalv3.h"
-#include "runtime/primitive_type.h"
+#include "types/logical_type.h"
 #include "types/timestamp_value.h"
 #include "util/date_func.h"
 #include "util/logging.h"
@@ -32,26 +33,25 @@
 #include "util/timezone_utils.h"
 
 namespace starrocks {
-using vectorized::RunTimeCppType;
 
-void fillStringValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
+void fillStringValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
 
 template <typename IntegerType>
-void fillIntegerValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
+void fillIntegerValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
 
 template <typename FloatType>
-void fillFloatValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
+void fillFloatValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
 
-void fillDecimalV2Value(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx,
+void fillDecimalV2Value(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx,
                         size_t precision, size_t scale);
 
 template <typename DecimalType>
-void fillDecimalV3Value(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx,
+void fillDecimalV3Value(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx,
                         size_t precision, size_t scale);
 
-void fillDateValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
+void fillDateValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
 
-void fillTimestampValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
+void fillTimestampValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx);
 
 ORCOutputStream::ORCOutputStream(std::unique_ptr<WritableFile> writable_file, size_t buff_size) :
         _writable_file(std::move(writable_file)),
@@ -98,7 +98,7 @@ void ORCOutputStream::flush() {
     _pos = _buff;
 }
 
-const static std::unordered_map<PrimitiveType, orc::TypeKind> g_starrocks_orc_type_mapping = {
+const static std::unordered_map<LogicalType, orc::TypeKind> g_starrocks_orc_type_mapping = {
         {TYPE_BOOLEAN, orc::BOOLEAN},    {TYPE_TINYINT, orc::BYTE},
         {TYPE_SMALLINT, orc::SHORT},     {TYPE_INT, orc::INT},
         {TYPE_BIGINT, orc::LONG},        {TYPE_FLOAT, orc::FLOAT},
@@ -178,7 +178,7 @@ ORCBuilder::ORCBuilder(ORCBuilderOptions options, std::unique_ptr<WritableFile> 
 ORCBuilder::~ORCBuilder() {
 }
 
-Status ORCBuilder::init(vectorized::Chunk* chunk) {
+Status ORCBuilder::init(Chunk* chunk) {
     if (_init || chunk->num_rows() == 0) {
         return Status::OK();
     }
@@ -198,7 +198,7 @@ Status ORCBuilder::init(vectorized::Chunk* chunk) {
         // resolve column name
         auto root = _output_expr_ctxs.at(idx)->root();
         auto column_id = root->get_column_ref()->slot_id();
-        string column_name;
+        std::string column_name;
         if (chunk->schema() != nullptr && !chunk->get_column_name(column_id).empty()) {
             column_name = chunk->get_column_name(column_id);
         } else if (_output_tuple_desc != nullptr) {
@@ -247,7 +247,7 @@ Status ORCBuilder::init(vectorized::Chunk* chunk) {
     return Status::OK();
 }
 
-Status ORCBuilder::add_chunk(vectorized::Chunk* chunk) {
+Status ORCBuilder::add_chunk(Chunk* chunk) {
     RETURN_IF_ERROR(init(chunk));
 
     const size_t numRows = chunk->num_rows();
@@ -277,11 +277,11 @@ Status ORCBuilder::add_chunk(vectorized::Chunk* chunk) {
             size_t precision = subType->getPrecision();
             size_t scale = subType->getScale();
 
-            vectorized::Column* dataColumn = column.get();
-            vectorized::NullColumn* nullColumn = nullptr;
+            Column* dataColumn = column.get();
+            NullColumn* nullColumn = nullptr;
             bool isNullable = false;
             if (_output_expr_ctxs.at(col)->root()->is_nullable()) {
-                auto* nullableColumn = down_cast<vectorized::NullableColumn*>(column.get());
+                auto* nullableColumn = down_cast<NullableColumn*>(column.get());
                 nullColumn = nullableColumn->null_column().get();
                 dataColumn = nullableColumn->data_column().get();
                 isNullable = true;
@@ -374,9 +374,9 @@ Status ORCBuilder::finish() {
 }
 
 
-void fillStringValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
+void fillStringValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
     auto* stringBatch = down_cast<orc::StringVectorBatch*>(batch);
-    auto* binaryColumn = down_cast<vectorized::BinaryColumn*>(dataColumn);
+    auto* binaryColumn = down_cast<BinaryColumn*>(dataColumn);
     auto& bytes = binaryColumn->get_bytes();
     const auto& offset = binaryColumn->get_offset();
     auto size = offset[row + 1] - offset[row];
@@ -386,16 +386,16 @@ void fillStringValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* bat
 }
 
 template <typename IntegerType>
-void fillIntegerValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
+void fillIntegerValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
     auto* longBatch = down_cast<orc::LongVectorBatch*>(batch);
-    auto* numericColumn = down_cast<vectorized::FixedLengthColumn<IntegerType>*>(dataColumn);
+    auto* numericColumn = down_cast<FixedLengthColumn<IntegerType>*>(dataColumn);
     longBatch->data[batchIdx] = numericColumn->get_data()[row];
 }
 
 template <typename FloatType>
-void fillFloatValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
+void fillFloatValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
     auto* doubleBatch = down_cast<orc::DoubleVectorBatch*>(batch);
-    auto* floatColumn = down_cast<vectorized::FixedLengthColumn<FloatType>*>(dataColumn);
+    auto* floatColumn = down_cast<FixedLengthColumn<FloatType>*>(dataColumn);
     doubleBatch->data[batchIdx] = floatColumn->get_data()[row];
 }
 
@@ -426,17 +426,17 @@ static void fillDecimal128Batch(orc::ColumnVectorBatch* batch, const std::string
     d128Batch->values[batchIdx] = decimal;
 }
 
-void fillDecimalV2Value(vectorized::Column *dataColumn, orc::ColumnVectorBatch *batch, size_t row, size_t batchIdx,
+void fillDecimalV2Value(Column *dataColumn, orc::ColumnVectorBatch *batch, size_t row, size_t batchIdx,
                         size_t precision, size_t scale) {
-    auto* decimalColumn = down_cast<vectorized::FixedLengthColumn<DecimalV2Value>*>(dataColumn);
+    auto* decimalColumn = down_cast<FixedLengthColumn<DecimalV2Value>*>(dataColumn);
     std::string decimalStrFmt = decimalColumn->get_data()[row].to_string(scale);
     fillDecimal128Batch(batch, decimalStrFmt, row, batchIdx, precision, scale);
 }
 
 template <typename DecimalType>
-void fillDecimalV3Value(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx,
+void fillDecimalV3Value(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx,
                                     size_t precision, size_t scale) {
-    auto* decimalColumn = down_cast<vectorized::DecimalV3Column<DecimalType>*>(dataColumn);
+    auto* decimalColumn = down_cast<DecimalV3Column<DecimalType>*>(dataColumn);
     if constexpr (!std::is_same<DecimalType, RunTimeCppType<TYPE_DECIMAL128>>::value) {
         auto value = decimalColumn->get_data()[row];
         fillDecimal64Batch(batch, value, row, batchIdx, precision, scale);
@@ -446,20 +446,20 @@ void fillDecimalV3Value(vectorized::Column* dataColumn, orc::ColumnVectorBatch* 
     }
 }
 
-void fillDateValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
+void fillDateValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
     auto* longBatch = down_cast<orc::LongVectorBatch*>(batch);
-    const auto& t1970 = vectorized::DateValue::create(1970, 1, 1);
-    auto* dateColumn = down_cast<vectorized::FixedLengthColumn<vectorized::DateValue>*>(dataColumn);
+    const auto& t1970 = DateValue::create(1970, 1, 1);
+    auto* dateColumn = down_cast<FixedLengthColumn<DateValue>*>(dataColumn);
     double days = dateColumn->get_data()[row].julian() - t1970.julian();
     longBatch->data[batchIdx] = static_cast<int64_t>(days);
 }
 
-void fillTimestampValue(vectorized::Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
+void fillTimestampValue(Column* dataColumn, orc::ColumnVectorBatch* batch, size_t row, size_t batchIdx) {
     auto* tsBatch = down_cast<orc::TimestampVectorBatch*>(batch);
     cctz::time_zone ctz;
     TimezoneUtils::find_cctz_time_zone(TimezoneUtils::default_time_zone, ctz);
     int64_t offset = TimezoneUtils::to_utc_offset(ctz);
-    auto* dtColumn = down_cast<vectorized::FixedLengthColumn<vectorized::TimestampValue>*>(dataColumn);
+    auto* dtColumn = down_cast<FixedLengthColumn<TimestampValue>*>(dataColumn);
     auto ts = dtColumn->get_data()[row].to_unix_second() - offset;
     tsBatch->data[batchIdx] = ts;
     tsBatch->nanoseconds[batchIdx] = 0;

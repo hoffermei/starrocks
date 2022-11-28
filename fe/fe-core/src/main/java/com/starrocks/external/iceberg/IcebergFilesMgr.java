@@ -32,6 +32,8 @@ import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FindFiles;
 import org.apache.iceberg.Metrics;
 import org.apache.iceberg.MetricsConfig;
+import org.apache.iceberg.PartitionField;
+import org.apache.iceberg.PartitionKey;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.ReplacePartitions;
 import org.apache.iceberg.RewriteFiles;
@@ -43,12 +45,16 @@ import org.apache.iceberg.hadoop.HadoopInputFile;
 import org.apache.iceberg.mapping.MappingUtil;
 import org.apache.iceberg.mapping.NameMapping;
 import org.apache.iceberg.orc.OrcMetrics;
+import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.types.Conversions;
+import org.apache.iceberg.types.Type;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.File;
 import java.nio.file.Paths;
-import java.util.Date;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -61,11 +67,11 @@ public class IcebergFilesMgr {
 
     private final Schema schema;
     private final PartitionSpec partitionSpec;
-    private final boolean isOlapTablePartitioned;
+    private final boolean isIcebergTablePartitioned;
 
     public IcebergFilesMgr(Table icebergTable) {
         this.icebergTable = icebergTable;
-        this.isOlapTablePartitioned = !icebergTable.spec().isUnpartitioned();
+        this.isIcebergTablePartitioned = !icebergTable.spec().isUnpartitioned();
         this.schema = icebergTable.schema();
         this.partitionSpec = icebergTable.spec();
     }
@@ -105,7 +111,7 @@ public class IcebergFilesMgr {
 
     // check timeout before real commit to iceberg
     private synchronized void checkTimeout(long start, long timeoutMs) throws TimeoutException {
-        if (timeoutMs > 0 && ((new Date().getTime() - start) > timeoutMs)) {
+        if (timeoutMs > 0 && ((System.currentTimeMillis() - start) > timeoutMs)) {
             String msg = String.format(
                     "add iceberg files failed, prepare commit exceed timeout %s", timeoutMs);
             throw new TimeoutException(msg);
@@ -225,7 +231,7 @@ public class IcebergFilesMgr {
         }
 
         LOG.info("begin commit to iceberg files, count:{}", appendFileNames);
-        if (timeoutMs > 0 && ((new Date().getTime() - start) > timeoutMs)) {
+        if (timeoutMs > 0 && ((System.currentTimeMillis() - start) > timeoutMs)) {
             LOG.warn("add iceberg files failed, exceed timeout {}", timeoutMs);
             String msg = String.format("add iceberg files failed, exceed timeout %s", timeoutMs);
             return new Status(TStatusCode.CANCELLED, msg);
@@ -267,23 +273,57 @@ public class IcebergFilesMgr {
                     "invalid file location [%s], should prefix with iceberg table location", filePath);
             throw new Exception(msg);
         }
-        String appendix = filePath.replace(filePrefix, "");
-        String partitionPath = Paths.get(appendix).getParent().getFileName().toString();
-        partitionPath = StringUtils.strip(partitionPath, File.separator);
-        LOG.debug("got partition key {} from filepath {}", partitionPath, filePath);
 
         HadoopInputFile inputFile = HadoopInputFile.fromLocation(filePath, conf);
         NameMapping nameMapping = MappingUtil.create(schema);
+        // todo specified spec mode from request.
         Metrics metrics = OrcMetrics.fromInputFile(inputFile, MetricsConfig.getDefault(), nameMapping);
         DataFiles.Builder builder = DataFiles.builder(partitionSpec)
-                .withPath(filePath)
-                .withFormat(FileFormat.fromFileName(filePath))
-                .withMetrics(metrics)
-                .withFileSizeInBytes(inputFile.getLength());
-        if (isOlapTablePartitioned) {
+                                             .withPath(filePath)
+                                             .withFormat(FileFormat.fromFileName(filePath))
+                                             .withMetrics(metrics)
+                                             .withFileSizeInBytes(inputFile.getLength());
+        if (isIcebergTablePartitioned) {
             LOG.debug("partitioned table, add partition path");
-            builder = builder.withPartitionPath(partitionPath);
+            String appendix = filePath.replace(filePrefix, "");
+            String partitionPath = Paths.get(appendix).getParent().getFileName().toString();
+            partitionPath = StringUtils.strip(partitionPath, File.separator);
+            LOG.debug("got partition key {} from filepath {}", partitionPath, filePath);
+
+            PartitionKey partitionKey  = new PartitionKey(partitionSpec, schema);
+            fillFromPath(partitionSpec, partitionPath, partitionKey);
+            builder = builder.withPartition(partitionKey);
         }
         return builder.build();
+    }
+
+    private void fillFromPath(PartitionSpec spec, String partitionPath, PartitionKey partitionKey) {
+
+        String[] partitions = partitionPath.split("/", -1);
+        Preconditions.checkArgument(partitions.length <= spec.fields().size(),
+                "Invalid partition data, too many fields (expecting %s): %s", spec.fields().size(), partitionPath);
+        Preconditions.checkArgument(partitions.length >= spec.fields().size(),
+                "Invalid partition data, not enough fields (expecting %s): %s", spec.fields().size(), partitionPath);
+
+        for (int i = 0; i < partitions.length; ++i) {
+            PartitionField field = spec.fields().get(i);
+            String[] parts = partitions[i].split("=", 2);
+            Preconditions.checkArgument(parts.length == 2 && parts[0] != null && field.name().equals(parts[0]),
+                    "Invalid partition: %s", partitions[i]);
+            Type type = spec.partitionType().fields().get(i).type();
+            if (type.typeId() == Type.TypeID.TIMESTAMP) {
+                String timestampStr = parts[1];
+                timestampStr = timestampStr.replaceAll("%3A", ":");
+                if (timestampStr.endsWith("Z")) {
+                    timestampStr = timestampStr.substring(0, timestampStr.length() - 1);
+                }
+                LocalDateTime timestamp = LocalDateTime.parse(timestampStr);
+                partitionKey.set(i, timestamp.toInstant(ZoneOffset.UTC).toEpochMilli() * 1000);
+
+            } else {
+                partitionKey.set(i, Conversions.fromPartitionString(type, parts[1]));
+            }
+
+        }
     }
 }

@@ -57,7 +57,7 @@ public:
                std::map<std::string, TExtraColumnAttribute> attributes);
     ~ORCBuilder();
 
-    Status add_chunk(vectorized::Chunk* chunk) override;
+    Status add_chunk(Chunk* chunk) override;
 
     std::size_t file_size() override;
 
@@ -79,7 +79,7 @@ private:
     const std::vector<std::string> _column_names;
     std::map<std::string, TExtraColumnAttribute> _attributes;
 
-    Status init(vectorized::Chunk* chunk);
+    Status init(Chunk* chunk);
 };
 
 } // namespace starrocks

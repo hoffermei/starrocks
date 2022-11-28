@@ -79,10 +79,9 @@ import com.starrocks.sql.optimizer.transformer.SqlToScalarOperatorTranslator;
 import com.starrocks.sql.plan.ExecPlan;
 import com.starrocks.sql.plan.PlanFragmentBuilder;
 import com.starrocks.thrift.TResultSinkType;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import com.starrocks.thrift.TWriteQuorumType;
-import org.apache.hadoop.conf.Configuration;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -195,8 +194,7 @@ public class InsertPlanner {
             } else if (insertStmt.getTargetTable() instanceof MysqlTable) {
                 dataSink = new MysqlTableSink((MysqlTable) insertStmt.getTargetTable());
             } else if (insertStmt.getTargetTable() instanceof IcebergTable) {
-                BrokerDesc brokerDesc = getBrokerDesc();
-                dataSink = new IcebergTableSink((IcebergTable) insertStmt.getTargetTable(), olapTuple, brokerDesc);
+                dataSink = new IcebergTableSink((IcebergTable) insertStmt.getTargetTable(), olapTuple);
             } else {
                 throw new SemanticException("Unknown table type " + insertStmt.getTargetTable().getType());
             }
