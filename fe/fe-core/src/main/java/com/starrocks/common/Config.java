@@ -2010,8 +2010,30 @@ public class Config extends ConfigBase {
      **/
     @ConfField(mutable = true)
     public static boolean enable_auto_tablet_distribution = false;
+
+    /**
+     * The retry times of iceberg commit request.
+     */
     @ConfField(mutable = true)
     public static long iceberg_commit_max_retries = 3;
+
+    /**
+     * The default rpc timeout of iceberg add-files request
+     */
     @ConfField(mutable = true)
     public static long iceberg_default_add_files_rpc_timeout_ms = 120000 * 3 / 4;
+
+    /**
+     * The maximum number of bytes per file when writing to iceberg table,
+     * default value is 128 MB.
+     */
+    @ConfField(mutable = true)
+    public static long iceberg_sink_maximum_bytes_per_file = 134217728L;
+
+    /**
+     * The maximum number of rows per file when writing to iceberg table,
+     * default value is 1,000,000.
+     */
+    @ConfField(mutable = true)
+    public static long iceberg_sink_maximum_rows_per_file = 1000000L;
 }

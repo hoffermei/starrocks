@@ -1344,6 +1344,15 @@ public class StmtExecutor {
                 dataSink.complete();
             }
 
+            if (execPlan.getFragments().get(0).getSink() instanceof IcebergTableSink) {
+                context.getSessionVariable().setPreferComputeNode(false);
+                context.getSessionVariable().setUseComputeNodes(0);
+                IcebergTableSink dataSink = (IcebergTableSink) execPlan.getFragments().get(0).getSink();
+                dataSink.init(context.getExecutionId(), transactionId, database.getId(),
+                        ConnectContext.get().getSessionVariable().getQueryTimeoutS());
+                dataSink.complete();
+            }
+
             coord = new Coordinator(context, execPlan.getFragments(), execPlan.getScanNodes(),
                     execPlan.getDescTbl().toThrift());
             coord.setQueryType(TQueryType.LOAD);

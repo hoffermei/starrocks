@@ -220,10 +220,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.thrift.TException;
 
-import java.util.Collections;
 import java.io.File;
 import java.nio.file.Paths;
-import java.util.Date;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -1798,7 +1797,7 @@ public class FrontendServiceImpl implements FrontendService.Iface {
     @Override
     public TAddIcebergFilesResponse addIcebergFiles(TAddIcebergFilesRequest request) throws TException {
         LOG.debug("receive add iceberg files request: table {} files {}", request.table_id, request.files);
-        long start = new Date().getTime();
+        long start = System.currentTimeMillis();
         Table table = GlobalStateMgr.getCurrentState().getDb(request.db_id).getTable(request.table_id);
         if (!(table instanceof IcebergTable)) {
             LOG.warn("table {} is not iceberg table, only support iceberg table currently", table.getName());

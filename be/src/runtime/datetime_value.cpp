@@ -427,6 +427,40 @@ char* DateTimeValue::append_time_string(char* to) const {
     return to;
 }
 
+char* DateTimeValue::append_human_time_string(char* to) const {
+    // Hour
+    uint32_t temp = _hour;
+    if (temp >= 100) {
+        *to++ = (char)('0' + (temp / 100));
+        temp %= 100;
+    }
+    *to++ = (char)('0' + (temp / 10));
+    *to++ = (char)('0' + (temp % 10));
+    *to++ = ':';
+    // Minute
+    *to++ = (char)('0' + (_minute / 10));
+    *to++ = (char)('0' + (_minute % 10));
+    if (_second > 0 || _microsecond > 0) {
+        *to++ = ':';
+        /* Second */
+        *to++ = (char)('0' + (_second / 10));
+        *to++ = (char)('0' + (_second % 10));
+        if (_microsecond > 0) {
+            *to++ = '.';
+            uint32_t first = _microsecond / 10000;
+            uint32_t second = (_microsecond % 10000) / 100;
+            uint32_t third = _microsecond % 100;
+            *to++ = (char)('0' + first / 10);
+            *to++ = (char)('0' + first % 10);
+            *to++ = (char)('0' + second / 10);
+            *to++ = (char)('0' + second % 10);
+            *to++ = (char)('0' + third / 10);
+            *to++ = (char)('0' + third % 10);
+        }
+    }
+    return to;
+}
+
 char* DateTimeValue::to_datetime_string(char* to) const {
     to = append_date_string(to);
     *to++ = ' ';
@@ -444,6 +478,14 @@ char* DateTimeValue::to_date_string(char* to) const {
 char* DateTimeValue::to_time_string(char* to) const {
     to = append_time_string(to);
     *to++ = '\0';
+    return to;
+}
+
+char * DateTimeValue::to_human_string(char* to) const {
+    to = append_date_string(to);
+    *to++ = 'T';
+    to = append_human_time_string(to);
+    *to++ = 'Z';
     return to;
 }
 

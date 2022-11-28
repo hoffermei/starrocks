@@ -27,13 +27,13 @@ public:
 
     ~IcebergTableSink() override;
 
-    Status init(const TDataSink& thrift_sink) override;
+    Status init(const TDataSink& thrift_sink, RuntimeState* state) override;
 
     Status prepare(RuntimeState* state) override;
 
     Status open(RuntimeState* state) override;
 
-    Status send_chunk(RuntimeState* state, vectorized::Chunk* chunk) override;
+    Status send_chunk(RuntimeState* state, Chunk* chunk) override;
 
     // Flush all buffered data and close all existing channels to destination
     // hosts. Further send() calls are illegal after calling close().
@@ -46,14 +46,14 @@ private:
 
     Status gen_file_name(std::string* file_name);
 
-    Status write_to_partition(vectorized::Chunk* chunk, const string& partitionKey);
+    Status write_to_partition(Chunk* chunk, const std::string& partitionKey);
 
     RuntimeState* _state;
     ObjectPool* _pool;
     const RowDescriptor& _row_desc;
     const std::vector<TExpr>& _t_output_expr;
     int _chunk_size{};
-    const TIcebergTableSink* t_iceberg_sink;
+    std::shared_ptr<TIcebergTableSink> t_iceberg_sink;
 
     int _tuple_desc_id = -1;
     TupleDescriptor* _output_tuple_desc = nullptr;
@@ -61,9 +61,9 @@ private:
 
     RuntimeProfile* _profile = nullptr;
     int timeout_ms;
-    std::unique_ptr<vectorized::Chunk> _output_chunk;
-    std::vector<string> _partitionKeys;
-    std::unordered_map<string, std::unique_ptr<FileBuilder>> _partition_writer_map;
+    std::unique_ptr<Chunk> _output_chunk;
+    std::vector<std::string> _partitionKeys;
+    std::unordered_map<std::string, std::unique_ptr<FileBuilder>> _partition_writer_map;
 };
 
 } // namespace starrocks
