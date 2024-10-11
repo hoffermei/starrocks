@@ -1844,7 +1844,6 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
                     (PartitionRangeDesc) visit(context.partitionRangeDesc());
         }
 
-        NodePosition pos = createPos(context);
         return new CreateExternalCooldownStmt(targetTableName, partitionRangeDesc,
                 context.FORCE() != null, createPos(context));
     }
@@ -1853,7 +1852,6 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
     public ParseNode visitCancelCooldownStatement(StarRocksParser.CancelCooldownStatementContext context) {
         QualifiedName qualifiedName = getQualifiedName(context.qualifiedName());
         TableName targetTableName = qualifiedNameToTableName(qualifiedName);
-        boolean force = context.FORCE() != null;
         return new CancelExternalCooldownStmt(targetTableName, createPos(context));
     }
 
