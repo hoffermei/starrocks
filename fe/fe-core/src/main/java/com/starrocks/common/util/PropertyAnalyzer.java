@@ -59,7 +59,6 @@ import com.starrocks.catalog.KeysType;
 import com.starrocks.catalog.MaterializedView;
 import com.starrocks.catalog.OlapTable;
 import com.starrocks.catalog.Partition;
-import com.starrocks.catalog.PrimitiveType;
 import com.starrocks.catalog.Table;
 import com.starrocks.catalog.TableProperty;
 import com.starrocks.catalog.Type;
@@ -1750,19 +1749,6 @@ public class PropertyAnalyzer {
         }
         sb.append(")");
         return sb.toString();
-    }
-
-    public static long analyzeDatetimeProp(Map<String, String> properties,
-                                           String propKey, long defaultVal) throws AnalysisException {
-        String text = properties.get(propKey);
-        if (text == null) {
-            return defaultVal;
-        }
-        properties.remove(propKey);
-        if (text.trim().isEmpty()) {
-            return 0L;
-        }
-        return TimeUtils.parseDate(text, PrimitiveType.DATETIME).getTime();
     }
 
     public static long analyzeExternalCooldownSyncedTimeMs(Map<String, String> properties) throws AnalysisException {
